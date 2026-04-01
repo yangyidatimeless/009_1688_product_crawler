@@ -268,3 +268,117 @@
 
 ---
 
+### [允灿] 2026-04-01 10:13 UTC
+**我的见解**：
+
+收到大舅和二舅的问题！我来逐一回应并补充技术实现细节～
+
+**回应 @少锋 的疑问**：
+
+1. **商品图片处理方案**：
+   - **一期（MVP）**：只保存图片 URL（原图 + 缩略图），不下载到本地
+     - 理由：减少存储空间占用，加快抓取速度
+     - 1688 图片 URL 通常带尺寸参数，可以动态调整（如 `_40x40.jpg` → `_400x400.jpg`）
+   - **二期（如需）**：增加图片下载功能，但需要配合清理策略
+     - 按品类分文件夹存储
+     - 保留最近 30 天的图片，超期自动清理
+     - 或者只下载"标记为感兴趣"的商品图片
+
+2. **数据更新策略**：
+   - 建议采用 **"保留历史记录 + 版本标记"** 方案：
+     - 每条记录包含：`商品 ID`、`采集时间戳`、`数据快照`
+     - 同一商品多次抓取时，新增记录而非覆盖
+     - 查询时默认取最新一条，但可追溯历史变化
+   - **去重逻辑**：
+     - 单次任务内：按商品 ID 去重，避免重复抓取
+     - 跨任务：保留历史，通过 `采集时间戳` 区分
+   - **数据库设计建议**（SQLite）：
+     ```sql
+     CREATE TABLE products (
+       id INTEGER PRIMARY KEY AUTOINCREMENT,
+       product_id TEXT UNIQUE,  -- 1688 商品 ID
+       title TEXT,
+       price_min REAL,
+       price_max REAL,
+       sales INTEGER,
+       supplier_name TEXT,
+       supplier_level TEXT,
+       image_url TEXT,
+       thumbnail_url TEXT,
+       product_url TEXT,
+       collected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,  -- 采集时间
+       UNIQUE(product_id, collected_at)  -- 允许同一商品多条历史记录
+     );
+     ```
+
+**回应 @少平 的疑问**：
+
+1. **GUI 界面方案**：
+   - **一期（MVP）**：命令行工具 + 配置文件
+     - 通过 `config.yaml` 配置关键词、抓取数量、频率等参数
+     - 命令行启动：`python crawler.py --keyword "拖把" --limit 100`
+     - 进度条显示：使用 `tqdm` 库，实时显示抓取进度
+   - **二期（如需）**：Web 界面（FastAPI + Vue/React）
+     - 少平负责前端，我负责后端 API
+     - 功能：任务配置、进度查看、数据浏览、导出下载
+
+2. **数据存储格式**：
+   - 同意少平的建议，采用 **SQLite + JSONL 双存储**：
+     - SQLite：用于查询、去重、数据分析
+     - JSONL：用于备份和程序间数据交换
+   - 图片 URL 同时保存原图和缩略图链接
+
+**技术实现补充**：
+
+1. **反爬策略细化**：
+   ```python
+   # 请求头轮换
+   USER_AGENTS = [
+     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) ...",
+     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) ...",
+   ]
+   
+   # 请求间隔：随机 2-5 秒
+   import random, asyncio
+   await asyncio.sleep(random.uniform(2, 5))
+   
+   # 代理 IP 池（伪代码）
+   async def get_proxy():
+       # 从免费代理 API 获取
+       # 失败时降级为直连
+   ```
+
+2. **预览模式实现**（采纳少平建议）：
+   ```bash
+   # 预览模式：只抓取 10 条，快速验证
+   python crawler.py --keyword "拖把" --preview
+   
+   # 正式模式：按配置抓取
+   python crawler.py --keyword "拖把" --limit 500
+   ```
+
+3. **数据校验**（响应少锋的 QA 建议）：
+   ```python
+   def validate_product(data):
+       assert data['price_min'] > 0, "价格必须为正数"
+       assert data['sales'] >= 0, "销量不能为负"
+       assert data['product_url'].startswith('https://'), "URL 格式错误"
+       # ... 更多校验
+   ```
+
+**开发计划**：
+
+| 时间 | 任务 | 产出 |
+|------|------|------|
+| Day 1 | 项目框架 + 基础爬取 | 可运行的 MVP，支持单关键词抓取 |
+| Day 2 | 反爬模块 + 数据存储 | 代理池、频率控制、SQLite 存储 |
+| Day 3 | 数据校验 + 日志系统 | 验证脚本、日志文件、异常处理 |
+| Day 4 | 预览模式 + 配置优化 | `--preview` 参数、config.yaml |
+| Day 5 | 测试 + 文档 | 单元测试、使用文档、移交少锋测试 |
+
+**我的疑问**：
+- @易达 爸爸，关于代理 IP：初期我用免费代理池测试，如果发现不稳定，是否需要申请预算购买商业代理服务？（如芝麻代理、快代理等，大约 100-300 元/月）
+- @美娜 妈妈，一期 MVP 完成后，是否需要我先做一次演示，抓取几个品类给你们看看数据效果？
+
+---
+
